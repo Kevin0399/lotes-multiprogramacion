@@ -74,7 +74,7 @@ class Proceso {
         this.reinsertar = false;
         this.tiempoTranscurrido = 0; // Cantidad de tiempo en la que el proceso ya estuvo en ejecucion
         this.tiempoRestante = tiempoMax;
-        
+
     }
 };
 // Objeto que contiene la matriz de lotes y el contador global
@@ -195,70 +195,99 @@ const ejecutarProceso = async (Lotes) => {
     }
 }
 
+
+// Variables globales para control de teclas
+let teclaPresionada = "c"; // Por defecto, sin pausa
+let enPausa = false; // Bandera para controlar la pausa
+
+// Detectamos cuando se presiona una tecla
+document.addEventListener("keyup", (event) => {
+    const key = event.key.toLowerCase();
+    teclaPresionada = key;
+
+    if (key === "p") {
+        enPausa = true; // Activamos pausa
+    } else if (key === "c") {
+        enPausa = false; // Reanudamos ejecución
+    }
+});
+
 /**
  * 
  * @param {Objeto<Proceso>} proceso Recibe el proceso en ejecucion
+ * @param {Objeto<Lotes>} Lotes Objeto que contiene el tiempo global total
  * @returns 
  */
-// Cronómetro asíncrono que espera el tiempo del proceso
+// Cronómetro asíncrono que espera el tiempo del proceso, ahora con escucha local de teclas
 const cronometroAsync = async (proceso, Lotes) => {
     let tiempoTranscurrido = proceso.tiempoTranscurrido || 0;
     const intervalo = 100; // Actualiza cada 100 ms
-    // proceso.tiempoRestante = proceso.tiempoMax - tiempoTranscurrido;
-    let teclaPresionada = "c";
+    let enPausa = false; // Control local de pausa
+    let teclaPresionada = "c"; // Inicialmente en "continuar"
 
-    // Detetectar cuando se presione una tecla
-    document.addEventListener("keyup", (event) => {
-        teclaPresionada = event.key.toLowerCase();
-    });
+    // Handler local para keyup, solo para este proceso
+    const keyupHandler = (event) => {
+        const key = event.key.toLowerCase();
+        teclaPresionada = key;
 
+        if (key === "p") {
+            enPausa = true; // Pausar ejecución
+        } else if (key === "c") {
+            enPausa = false; // Continuar ejecución
+        }
+    };
 
-    console.log({ teclaPresionada });
+    // Añadimos listener local para detectar teclas
+    document.addEventListener("keyup", keyupHandler);
 
     return new Promise((resolve) => {
         const timer = setInterval(() => {
-            tiempoTranscurrido += intervalo; // Tiempo de la ejecucion actual
-            proceso.tiempoTranscurrido = tiempoTranscurrido; // Contador de la ejecucion global del proceso
-            Lotes.tiempoTotalTranscurrido += intervalo; //  Actualizamos el tiempo global
-            proceso.tiempoRestante = proceso.tiempoMax - proceso.tiempoTranscurrido;
+            if (enPausa) return; // No avanza el tiempo si está en pausa
+
+            tiempoTranscurrido += intervalo;
+            proceso.tiempoTranscurrido = tiempoTranscurrido;
+            proceso.tiempoRestante = proceso.tiempoMax - tiempoTranscurrido;
+            Lotes.tiempoTotalTranscurrido += intervalo;
 
             let simbolo = determinarOperacion(proceso.operacion);
-            // Creamos una tabla para mostrar la informacion del proceso en ejecucion
+
             mostrarEjecucion.innerHTML = `
                 <table class="infoProceso">
                     <tr><th colspan="2">Información del Proceso</th></tr>
                     <tr><td><b>ID:</b></td><td>${proceso.id}</td></tr>
-                    <tr><td><b>TME:</b></td><td>${(proceso.tiempoMax / 1000).toFixed(1)} s (${proceso.tiempoMax} ms </td></tr>
+                    <tr><td><b>TME:</b></td><td>${(proceso.tiempoMax / 1000).toFixed(1)} s (${proceso.tiempoMax} ms)</td></tr>
                     <tr><td><b>Operación:</b></td><td>${proceso.valores[0]} ${simbolo} ${proceso.valores[1]}</td></tr>
                     <tr><td><b>Tiempo transcurrido:</b></td><td>${(tiempoTranscurrido / 1000).toFixed(1)} s (${tiempoTranscurrido} ms)</td></tr>
                     <tr><td><b>Tiempo restante:</b></td><td>${((proceso.tiempoMax - tiempoTranscurrido) / 1000).toFixed(1)} s (${Math.max(proceso.tiempoRestante, 0)} ms)</td></tr>
                 </table>
             `;
-            // Actualizamos el contador global
-            contadorGlobal.innerText = `Tiempo total global: ${(Lotes.tiempoTotalTranscurrido / 1000).toFixed(1)} s (${Lotes.tiempoTotalTranscurrido}ms)`;
 
-            // Si se presiona "w" (error en el proceso)
+            contadorGlobal.innerText = `Tiempo total global: ${(Lotes.tiempoTotalTranscurrido / 1000).toFixed(1)} s (${Lotes.tiempoTotalTranscurrido} ms)`;
+
             if (teclaPresionada == "w") {
-                console.log(teclaPresionada);
-                tiempoTranscurrido = proceso.tiempoMax + 100; // Finalizamos la ejecucion del proceso
                 proceso.status = "ERROR";
+                clearInterval(timer);
+                document.removeEventListener("keyup", keyupHandler); // Quitamos listener para este proceso
+                resolve();
             }
 
-            // Si se presiona "e"(Entrada/Salida)
             if (teclaPresionada == "e") {
-                console.log(teclaPresionada);
                 proceso.status = "ENTSAL";
-                proceso.reinsertar = true; // ⚠️ Nueva marca para reenviarlo al final
-                tiempoTranscurrido = proceso.tiempoMax + 100;
+                proceso.reinsertar = true;
+                clearInterval(timer);
+                document.removeEventListener("keyup", keyupHandler);
+                resolve();
             }
 
             if (tiempoTranscurrido >= proceso.tiempoMax) {
                 clearInterval(timer);
+                document.removeEventListener("keyup", keyupHandler);
                 resolve();
             }
         }, intervalo);
     });
 };
+
 
 /**
  * 
