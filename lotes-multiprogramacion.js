@@ -71,6 +71,10 @@ class Proceso {
         this.tiempoMax = tiempoMax;
         this.status = "ESPERA"; // Estado inicial
         this.resultado = null;
+        this.reinsertar = false;
+        this.tiempoTranscurrido = 0; // Cantidad de tiempo en la que el proceso ya estuvo en ejecucion
+        this.tiempoRestante = tiempoMax;
+        
     }
 };
 // Objeto que contiene la matriz de lotes y el contador global
@@ -83,6 +87,8 @@ class Lotes {
     }
 
 }
+
+
 /**
  * @param {Object[]} matrizLotes Matriz que contiene los lotes de procesos
  */
@@ -109,8 +115,9 @@ const ejecutarProceso = async (Lotes) => {
     Lotes.lotesPendientes--;
 
     let loteActual = Lotes.matrizLotes[numLoteActual - 1]; // Guardamos el lote actual
+    const ordenProcesos = { ESPERA: 1, ENTSAL: 2 };
 
-    for (let i = 0; i <= 3; i++) {
+    for (let i = 0; i <= loteActual.length; i++) {
         let enEjecucion = loteActual[i];
         if (!enEjecucion) continue; // Evitamos procesos undefined
 
@@ -119,13 +126,17 @@ const ejecutarProceso = async (Lotes) => {
         contadorLotesPendientes.innerText = `Lotes Pendientes: ${Lotes.lotesPendientes}`;
         contadorLoteActual.innerText = `Lote Actual: ${numLoteActual}`;
 
-        // Obtenemos los procesos que se encuentran en espera
-        let procesosPendientes = loteActual.filter(proceso => proceso !== enEjecucion && proceso.status === "ESPERA");
+        // Obtenemos los procesos que se encuentran en espera y en proceso de entrada salida
+        let procesosPendientes = loteActual.filter(proceso => proceso !== enEjecucion && (proceso.status === "ESPERA" || proceso.status === "ENTSAL"));
+
+        // Ordenamos los procesos para que los que esten esperando una operacion de E/S se coloquen al final del lote
+        procesosPendientes.sort((a, b) => ordenProcesos[a.status] - ordenProcesos[b.status]);
+        console.log({ procesosPendientes });
 
         // Mostramos en pantalla la tabla de espera
         for (let k = 0; k < procesosPendientes.length; k++) {
             let fila = document.createElement('tr');
-            fila.innerHTML = `<td>${procesosPendientes[k].nombre}</td><td>${((procesosPendientes[k].tiempoMax) / 1000).toFixed(1)} s </td>`;
+            fila.innerHTML = `<td>${procesosPendientes[k].nombre}</td><td>${((procesosPendientes[k].tiempoRestante) / 1000).toFixed(1)} s </td>`;
             tablaEspera.appendChild(fila);
         }
         // Determinamos el simbolo de la operacion
@@ -142,21 +153,45 @@ const ejecutarProceso = async (Lotes) => {
             tablaEspera.deleteRow(1);
         }
 
-        // Al terminar, muestra el resultado con máximo 2 decimales
-        enEjecucion.resultado = realizarOperacion(enEjecucion.operacion, enEjecucion.valores, enEjecucion.status);
-        enEjecucion.resultado = typeof enEjecucion.resultado === "number" // Formateamos el resultado
-            ? enEjecucion.resultado.toFixed(2)
-            : enEjecucion.resultado;
-        enEjecucion.status = "TERMINADO"; // Marca el proceso como terminado
+        // Verificar si el proceso salio de ejecucion por una solicitud de entrada/salida
+        if (enEjecucion.status === "ENTSAL") {
+            if (enEjecucion.reinsertar) {
+                enEjecucion.reinsertar = false; // Limpiamos la marca
+
+                //  Eliminar el proceso actual de su posición original
+                loteActual.splice(i, 1);
+
+                // ➕ Insertarlo al final
+                loteActual.push(enEjecucion);
+
+                //  Reducimos 'i' porque el array se acortó al hacer splice()
+                i--;
+            } else {
+                i--; // Si no hay que reinsertar, solo repetimos la iteración
+            }
+        }
 
 
-        // Agregamos el proceso terminado a la tabla de terminados
-        let filaTerminado = document.createElement('tr');
-        filaTerminado.innerHTML = `<td>${enEjecucion.id}</td>
-                                   <td>${enEjecucion.valores[0]} ${simbolo} ${enEjecucion.valores[1]}</td>
+
+        else {
+            // Al terminar, muestra el resultado con máximo 2 decimales
+            enEjecucion.resultado = realizarOperacion(enEjecucion.operacion, enEjecucion.valores, enEjecucion.status); // Mandamos status para verificar si hubo una interrupcion por motivo de error
+            enEjecucion.resultado = typeof enEjecucion.resultado === "number" // Formateamos el resultado
+                ? enEjecucion.resultado.toFixed(2)
+                : enEjecucion.resultado;
+            enEjecucion.status = "TERMINADO"; // Marca el proceso como terminado
+            enEjecucion.tiempoTranscurrido = 0;
+
+
+
+            // Agregamos el proceso terminado a la tabla de terminados
+            let filaTerminado = document.createElement('tr');
+            filaTerminado.innerHTML = `<td>${enEjecucion.id}</td>
+        <td>${enEjecucion.valores[0]} ${simbolo} ${enEjecucion.valores[1]}</td>
                                    <td>${enEjecucion.resultado}</td>
                                    <td>${numLoteActual}</td>`;
-        tablaTerminados.appendChild(filaTerminado);
+            tablaTerminados.appendChild(filaTerminado);
+        }
     }
 }
 
@@ -167,9 +202,9 @@ const ejecutarProceso = async (Lotes) => {
  */
 // Cronómetro asíncrono que espera el tiempo del proceso
 const cronometroAsync = async (proceso, Lotes) => {
-    let tiempoTranscurrido = 0;
-    let tiempoRestante = proceso.tiempoMax;
+    let tiempoTranscurrido = proceso.tiempoTranscurrido || 0;
     const intervalo = 100; // Actualiza cada 100 ms
+    // proceso.tiempoRestante = proceso.tiempoMax - tiempoTranscurrido;
     let teclaPresionada = "c";
 
     // Detetectar cuando se presione una tecla
@@ -182,9 +217,10 @@ const cronometroAsync = async (proceso, Lotes) => {
 
     return new Promise((resolve) => {
         const timer = setInterval(() => {
-            tiempoTranscurrido += intervalo;
-            tiempoRestante = proceso.tiempoMax - tiempoTranscurrido;
+            tiempoTranscurrido += intervalo; // Tiempo de la ejecucion actual
+            proceso.tiempoTranscurrido = tiempoTranscurrido; // Contador de la ejecucion global del proceso
             Lotes.tiempoTotalTranscurrido += intervalo; //  Actualizamos el tiempo global
+            proceso.tiempoRestante = proceso.tiempoMax - proceso.tiempoTranscurrido;
 
             let simbolo = determinarOperacion(proceso.operacion);
             // Creamos una tabla para mostrar la informacion del proceso en ejecucion
@@ -195,16 +231,25 @@ const cronometroAsync = async (proceso, Lotes) => {
                     <tr><td><b>TME:</b></td><td>${(proceso.tiempoMax / 1000).toFixed(1)} s (${proceso.tiempoMax} ms </td></tr>
                     <tr><td><b>Operación:</b></td><td>${proceso.valores[0]} ${simbolo} ${proceso.valores[1]}</td></tr>
                     <tr><td><b>Tiempo transcurrido:</b></td><td>${(tiempoTranscurrido / 1000).toFixed(1)} s (${tiempoTranscurrido} ms)</td></tr>
-                    <tr><td><b>Tiempo restante:</b></td><td>${((proceso.tiempoMax - tiempoTranscurrido) / 1000).toFixed(1)} s (${Math.max(tiempoRestante, 0)} ms)</td></tr>
+                    <tr><td><b>Tiempo restante:</b></td><td>${((proceso.tiempoMax - tiempoTranscurrido) / 1000).toFixed(1)} s (${Math.max(proceso.tiempoRestante, 0)} ms)</td></tr>
                 </table>
             `;
             // Actualizamos el contador global
             contadorGlobal.innerText = `Tiempo total global: ${(Lotes.tiempoTotalTranscurrido / 1000).toFixed(1)} s (${Lotes.tiempoTotalTranscurrido}ms)`;
 
+            // Si se presiona "w" (error en el proceso)
             if (teclaPresionada == "w") {
                 console.log(teclaPresionada);
                 tiempoTranscurrido = proceso.tiempoMax + 100; // Finalizamos la ejecucion del proceso
                 proceso.status = "ERROR";
+            }
+
+            // Si se presiona "e"(Entrada/Salida)
+            if (teclaPresionada == "e") {
+                console.log(teclaPresionada);
+                proceso.status = "ENTSAL";
+                proceso.reinsertar = true; // ⚠️ Nueva marca para reenviarlo al final
+                tiempoTranscurrido = proceso.tiempoMax + 100;
             }
 
             if (tiempoTranscurrido >= proceso.tiempoMax) {
