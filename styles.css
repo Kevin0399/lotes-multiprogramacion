@@ -11,6 +11,7 @@ body {
     flex-direction: column;
     gap: 1.5em;
     color: #222;
+ 
 }
 
 .contadorLotesPendientes, .contadorLoteActual, .contadorGlobal {
@@ -109,23 +110,6 @@ h2 {
     transform: scale(1.05);
 }
 
-/* Estilos para fondo de canvas: ocupa toda la pantalla y queda detrás */
-#bgCanvas {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 0; /* asegúrate que el contenido use z-index mayor a 0 si hace falta */
-  pointer-events: none; /* permite clicar elementos encima sin interferir */
-  display: block;
-}
-
-/* La app principal debe quedar encima */
-.app-root, .container, body > *:not(#bgCanvas) {
-  position: relative;
-  z-index: 1;
-}
 
 h1 {
   margin-bottom: 20px;
@@ -217,4 +201,11 @@ button:hover {
   border-radius: 6px;
   border: 1px solid #bdc3c7;
   font-size: 0.95rem;
+}
+
+#salida {
+  display: flex;
+  flex-direction: column;
+  gap: 3em;
+  width: 30%;
 }
